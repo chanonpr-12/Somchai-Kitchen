@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ครัวคุณสมชาย — API Documentation</title>
+  <!-- หน้าเอกสาร API (Swagger UI) อ่านจาก openapi.yaml
+       เพจนี้เป็นไฟล์ static แยกต่างหาก ไม่ใช่หน้าหนึ่งของแอปลูกค้า (ไม่มี route ใน src/)
+       — ตามปกติเอกสาร API ถูกเสิร์ฟจากฝั่ง backend (เช่น /docs ของ FastAPI, /swagger-ui ของ Spring)
+       แต่แล็บนี้ยังไม่มี backend จริง จึงฝากไว้กับ dev server ตัวเดียวกันไปก่อน
+       asset ของ swagger-ui คัดลอกจาก node_modules ด้วยคำสั่ง: npm run docs:assets -->
+  <link rel="stylesheet" href="./swagger-ui/swagger-ui.css" />
+  <style>
+    body { margin: 0; background: #fafafa; }
+  </style>
+</head>
+<body>
+  <div id="swagger-root"></div>
+  <script src="./swagger-ui/swagger-ui-bundle.js"></script>
+  <script>
+    SwaggerUIBundle({
+      url: './openapi.yaml',
+      dom_id: '#swagger-root',
+      // ปิดปุ่ม Try it out — mock ของแล็บนี้เป็นฟังก์ชันในแอป ยังไม่มี HTTP server รับสายจริง
+      // (สัปดาห์ที่ 6 มี backend จริงแล้ว หน้าเดียวกันนี้จะกดยิงทดสอบได้)
+      supportedSubmitMethods: [],
+      defaultModelsExpandDepth: 1,
+      docExpansion: 'list'
+    })
+  </script>
+</body>
+</html>

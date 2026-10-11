@@ -1,0 +1,644 @@
+# ============================================================================
+# openapi.yaml — OpenAPI spec ของ API ร้านครัวคุณสมชาย (POS สั่งอาหารที่โต๊ะ)
+#
+# ไฟล์นี้คือ API contract ฉบับทางการ แปลงมาจากการวิเคราะห์ใน ARCHITECTURE.md
+#   - เปิดดูเป็นเอกสารได้ที่ /api-docs.html (Swagger UI อ่านไฟล์นี้)
+#   - spec ครอบทั้งระบบ (จอลูกค้า / จอครัว / จอพนักงาน — ดู tags)
+#     แม้วันนี้จะ implement แล้วเฉพาะบางงาน — ดู "สถานะ:" ใน description ของแต่ละงาน
+#   - งานฝั่งออเดอร์มี mock ที่ src/api/orders.js · สัปดาห์ที่ 6 backend จริง (Firebase)
+#     จะ implement ตาม spec เดิม โดยหน้าเว็บและ store ไม่ต้องแก้
+#
+# สิ่งที่ผูกมัดใน spec = ชื่องาน + ชื่อฟิลด์ + ชนิดของค่า + รูปแบบความล้มเหลว
+# (ค่าใน example มีไว้ให้อ่านเข้าใจเร็ว ไม่ผูกมัด)
+# ============================================================================
+openapi: 3.0.3
+
+info:
+  title: ครัวคุณสมชาย — POS API
+  version: 1.0.0
+  description: |
+    API ของระบบสั่งอาหารที่โต๊ะ — ระบบมี **สามจอ** ที่ใช้ข้อมูลก้อนเดียวกัน (ARCHITECTURE.md §1):
+    **จอลูกค้า** (แอปที่มีวันนี้) · **จอครัว** (คิวออเดอร์ + อัปเดตสถานะ) · **จอพนักงาน** (เรียกพนักงาน + เก็บเงิน)
+
+    ข้อตกลงหลักจากการวิเคราะห์ (ARCHITECTURE.md §2 — ข้อมูลไหนเป็นของใคร):
+    - ของ client: **โต๊ะที่นั่งอยู่ + ตะกร้า** (ชั่วคราว หายได้ ไม่ผ่าน API)
+    - ของ server: **ผังโต๊ะ · เมนู · ออเดอร์ · สถานะอาหาร (ครัวเป็นคนเขียน) · คำขอเรียกพนักงาน · บิล/ยอดเงิน (server เป็นคนคิด)**
+
+    **สถานะการ implement** ระบุใน description ของแต่ละงาน:
+    - `mock แล้ว` = จอลูกค้าใช้อยู่จริงผ่าน mock ในโปรเจกต์นี้
+    - `spec ไว้ก่อน` = ตกลงรูปแบบไว้แล้ว รอสร้างเมื่อมี backend จริง/จอนั้นจริง (สัปดาห์ที่ 6+)
+    การเขียน spec ให้ครบทั้งระบบตั้งแต่แรก คือสิ่งที่กันไม่ให้ต้องรื้อรูปแบบข้อมูลตอนจอครัว/จอพนักงานมาจริง
+
+    หมายเหตุ: วันนี้ mock เป็นฟังก์ชันในแอป ยังไม่ใช่ HTTP server จริง
+    หน้า /api-docs.html จึงเปิดไว้ให้ **อ่าน** spec (ปุ่ม Try it out ถูกปิด — ใช้จริงได้ในสัปดาห์ที่ 6)
+
+tags:
+  - name: จอลูกค้า
+    description: งานที่แอปลูกค้า (โต๊ะ) เป็นคนเรียก
+  - name: จอครัว
+    description: งานที่จอครัวเป็นคนเรียก — ยังไม่ได้สร้างจอ แต่ spec ตกลงไว้ก่อน
+  - name: จอพนักงาน
+    description: งานที่จอพนักงาน/แคชเชียร์เป็นคนเรียก — ยังไม่ได้สร้างจอ แต่ spec ตกลงไว้ก่อน
+
+paths:
+  /fetchTables:
+    get:
+      operationId: fetchTables
+      tags: [จอลูกค้า]
+      summary: ขอผังโต๊ะทั้งร้าน + สถานะ (ว่าง/ใช้งานอยู่)
+      description: |
+        ผังโต๊ะเป็นข้อมูลของร้าน (server) ไม่ใช่ค่าฝังในแอป — จอลูกค้าใช้ตอนเลือกโต๊ะ
+        (จำลองการสแกน QR) และจอพนักงานใช้ดูว่าโต๊ะไหนมีลูกค้า
+
+        โต๊ะเริ่ม "ใช้งานอยู่" เมื่อมีออเดอร์แรก และกลับ "ว่าง" เมื่อ checkout (ARCHITECTURE.md §8.2 —
+        ไม่มีงานเปิด/ปิดโต๊ะแยก)
+
+        **สถานะ: spec ไว้ก่อน** — แอปวันนี้ยัง hardcode รายชื่อโต๊ะ (หนี้ ARCHITECTURE.md §3)
+      responses:
+        '200':
+          description: รายการโต๊ะทั้งหมด
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Table'
+        '503':
+          $ref: '#/components/responses/ServerUnreachable'
+
+  /fetchMenu:
+    get:
+      operationId: fetchMenu
+      tags: [จอลูกค้า]
+      summary: ขอเมนูทั้งร้าน
+      description: |
+        เมนูเป็นข้อมูลของ server (client อ่านอย่างเดียว)
+        · จำลองล้มเหลวด้วย `?fail=1` (คนละสวิตช์กับฝั่งออเดอร์)
+
+        **สถานะ: mock แล้ว** — `fetchMenu()` ใน `src/data/menu.js` (มากับโค้ดตั้งต้น)
+      responses:
+        '200':
+          description: เมนูทั้งหมดของร้าน
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/MenuItem'
+        '503':
+          $ref: '#/components/responses/ServerUnreachable'
+
+  /sendOrder:
+    post:
+      operationId: sendOrder
+      tags: [จอลูกค้า]
+      summary: ส่งออเดอร์เข้าครัว
+      description: |
+        เรียกตอนลูกค้ากด "ส่งครัว" — client ส่งเลขโต๊ะ + รายการจากตะกร้า (ดู `NewOrder`)
+
+        server เป็นคนออก **เลขออเดอร์ (`no`)** และ **เวลาที่รับ (`at`)** — client ตั้งเองไม่ได้
+        เพราะสองเครื่องออกเลขเองอาจชนกัน server เป็นศูนย์กลางจึงออกเลขไม่ซ้ำได้ (ARCHITECTURE.md §4.1)
+
+        **สถานะ: mock แล้ว** — `src/api/orders.js` (งานหลักของแล็บนี้)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewOrder'
+      responses:
+        '200':
+          description: บันทึกสำเร็จ — ได้ออเดอร์ฉบับที่ server ประทับ `no` และ `at` แล้ว
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+        '503':
+          description: |
+            ติดต่อ server ไม่ได้ — ลองใหม่ได้ · client ต้อง **ไม่ล้างตะกร้า**
+            ของต้องยังอยู่ให้กดส่งซ้ำ (ARCHITECTURE.md §5) · mock จำลองด้วย `?failorder=1`
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+
+  /fetchOrders:
+    get:
+      operationId: fetchOrders
+      tags: [จอลูกค้า]
+      summary: ขอออเดอร์ของโต๊ะนี้
+      description: |
+        หน้าติดตามออเดอร์เรียกเพื่อขอออเดอร์ของโต๊ะมาแสดง (สถานะรายจานอ่านได้จาก `items[].status`
+        ซึ่ง **ครัวเป็นคนอัปเดต** ผ่าน `updateItemStatus` — ลูกค้าอ่านอย่างเดียว)
+
+        **สำคัญ:** โต๊ะที่ยังไม่มีออเดอร์ → ตอบ **`200` + อาเรย์ว่าง `[]`** ไม่ใช่ error
+        — "ไม่มีข้อมูล" กับ "ผิดพลาด" คนละเรื่อง หน้าจอต้องแสดง empty state (ARCHITECTURE.md §6)
+
+        **สถานะ: mock แล้ว** — `src/api/orders.js`
+      parameters:
+        - name: table
+          in: query
+          required: true
+          description: เลขโต๊ะ ตามผังของร้าน (เช่น A1–A6, B1–B4)
+          schema:
+            type: string
+            example: A5
+      responses:
+        '200':
+          description: รายการออเดอร์ของโต๊ะนี้ (ว่าง = `[]` ไม่ใช่ error)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Order'
+        '503':
+          $ref: '#/components/responses/ServerUnreachable'
+
+  /callStaff:
+    post:
+      operationId: callStaff
+      tags: [จอลูกค้า]
+      summary: เรียกพนักงาน (ขอน้ำ / อุปกรณ์ / ช่วยเหลือ / เช็คบิล)
+      description: |
+        คำขอต้องไปถึง server — พนักงานอยู่เครื่องอื่น ถ้าเก็บไว้ในเครื่องลูกค้า เรียกไปก็ไม่มีใครเห็น
+        · "ขอเช็คบิล" เป็นเหตุผลหนึ่งของงานนี้ (พนักงานจะกด `checkout` ให้ที่จอพนักงาน)
+
+        **สถานะ: spec ไว้ก่อน** — แอปวันนี้ยังเก็บคำขอใน store ฝั่ง client (หนี้ ARCHITECTURE.md §3)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [table, reason]
+              properties:
+                table:
+                  type: string
+                  example: A5
+                reason:
+                  type: string
+                  enum: [ขอน้ำ, ขอช้อนส้อม/อุปกรณ์, ขอความช่วยเหลือ, ขอเช็คบิล]
+                  example: ขอเช็คบิล
+      responses:
+        '200':
+          description: รับคำขอแล้ว — server ออก `id` และเวลาให้
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StaffCall'
+        '503':
+          $ref: '#/components/responses/ServerUnreachable'
+
+  /fetchBill:
+    get:
+      operationId: fetchBill
+      tags: [จอลูกค้า, จอพนักงาน]
+      summary: ขอบิลของโต๊ะ — server เป็นคนรวมเงินและคิด VAT
+      description: |
+        ยอดเงินเป็น business rule ของร้าน — **ตัวเลขที่ใช้เก็บเงินจริงต้องมาจาก server**
+        (client คำนวณพรีวิวเองได้ แต่เชื่อเป็นยอดจริงไม่ได้ — ลูกค้าแก้ค่าในเครื่องตัวเองได้เสมอ)
+
+        **สถานะ: spec ไว้ก่อน** — แอปวันนี้ยังคำนวณบิลฝั่ง client (หนี้ ARCHITECTURE.md §8.3)
+      parameters:
+        - name: table
+          in: query
+          required: true
+          schema:
+            type: string
+            example: A5
+      responses:
+        '200':
+          description: บิลปัจจุบันของโต๊ะ (รวมทุกออเดอร์ที่ยังไม่ checkout)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Bill'
+        '503':
+          $ref: '#/components/responses/ServerUnreachable'
+
+  /fetchKitchenQueue:
+    get:
+      operationId: fetchKitchenQueue
+      tags: [จอครัว]
+      summary: ขอคิวออเดอร์ทุกโต๊ะที่ยังทำไม่เสร็จ
+      description: |
+        ครัวไม่ได้ดูทีละโต๊ะแบบลูกค้า — ครัวดู **คิวรวมทุกโต๊ะ** เรียงตามเวลาที่รับ (`at`)
+        ออเดอร์ที่ทุกจาน "เสิร์ฟแล้ว" จะหลุดจากคิว
+
+        **สถานะ: spec ไว้ก่อน** — รอสร้างจอครัว (สัปดาห์ที่ 6+)
+      responses:
+        '200':
+          description: ออเดอร์ที่ยังมีจานไม่เสิร์ฟ จากทุกโต๊ะ
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Order'
+        '503':
+          $ref: '#/components/responses/ServerUnreachable'
+
+  /updateItemStatus:
+    post:
+      operationId: updateItemStatus
+      tags: [จอครัว]
+      summary: ครัวเลื่อนสถานะอาหารหนึ่งจาน (ส่งครัว → กำลังทำ → เสิร์ฟแล้ว)
+      description: |
+        **เจ้าของสถานะอาหารคือครัว** — ลูกค้าได้แค่อ่านผ่าน `fetchOrders`
+        ปุ่มเลื่อนสถานะบนจอลูกค้าวันนี้เป็น**ตัวจำลองของงานนี้** (แทนจอครัวที่ยังไม่มี)
+        และจะถูกถอดเมื่อจอครัวมาจริง (ARCHITECTURE.md §8.4)
+
+        การบังคับสิทธิ์จริง (ห้ามลูกค้าเรียก) ต้องมีระบบยืนยันตัวตน — เรื่องของสัปดาห์ที่ 9
+        วันนี้ spec ประกาศเจตนาไว้ก่อนว่างานนี้เป็นของจอครัว
+
+        **สถานะ: spec ไว้ก่อน**
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [orderNo, lineId, status]
+              properties:
+                orderNo:
+                  type: integer
+                  example: 1
+                lineId:
+                  type: integer
+                  example: 1
+                status:
+                  type: string
+                  enum: [ส่งครัว, กำลังทำ, เสิร์ฟแล้ว]
+                  example: กำลังทำ
+      responses:
+        '200':
+          description: อัปเดตแล้ว — ตอบออเดอร์ฉบับล่าสุด
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+        '503':
+          $ref: '#/components/responses/ServerUnreachable'
+
+  /fetchStaffCalls:
+    get:
+      operationId: fetchStaffCalls
+      tags: [จอพนักงาน]
+      summary: ขอรายการเรียกพนักงานที่ยังค้าง (ทุกโต๊ะ)
+      description: |
+        จอพนักงานดูรวมทุกโต๊ะ เรียงตามเวลา — คู่กับ `resolveStaffCall` ตอนจัดการเสร็จ
+
+        **สถานะ: spec ไว้ก่อน** — รอสร้างจอพนักงาน
+      responses:
+        '200':
+          description: คำขอที่ยังไม่ถูกปิด
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/StaffCall'
+        '503':
+          $ref: '#/components/responses/ServerUnreachable'
+
+  /resolveStaffCall:
+    post:
+      operationId: resolveStaffCall
+      tags: [จอพนักงาน]
+      summary: ปิดคำขอเรียกพนักงานที่จัดการแล้ว
+      description: |
+        **สถานะ: spec ไว้ก่อน** — รอสร้างจอพนักงาน
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id]
+              properties:
+                id:
+                  type: integer
+                  example: 1
+      responses:
+        '200':
+          description: ปิดคำขอแล้ว
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StaffCall'
+        '503':
+          $ref: '#/components/responses/ServerUnreachable'
+
+  /checkout:
+    post:
+      operationId: checkout
+      tags: [จอพนักงาน]
+      summary: ปิดบิล เก็บเงิน — โต๊ะกลับเป็นว่าง
+      description: |
+        พนักงานเรียกตอนเก็บเงิน — server สรุปยอดสุดท้าย ออก **เลขใบเสร็จ (`billNo`)**
+        ปิดรอบออเดอร์ของโต๊ะ (หลังจากนี้ `fetchOrders` ของโต๊ะนี้ = `[]` เริ่มรอบใหม่)
+        และเปลี่ยนสถานะโต๊ะเป็น "ว่าง" (ARCHITECTURE.md §8.2)
+
+        **สถานะ: spec ไว้ก่อน** — รอสร้างจอพนักงาน
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [table]
+              properties:
+                table:
+                  type: string
+                  example: A5
+      responses:
+        '200':
+          description: ปิดบิลสำเร็จ — ได้ใบเสร็จ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Receipt'
+        '503':
+          $ref: '#/components/responses/ServerUnreachable'
+
+components:
+  responses:
+    ServerUnreachable:
+      description: ติดต่อ server ไม่ได้ — client แสดงจอผิดพลาด + ปุ่มลองใหม่
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+
+  schemas:
+    Table:
+      type: object
+      description: โต๊ะหนึ่งตัวในผังร้าน (ข้อมูลของ server — ร้านเป็นคนกำหนดผัง)
+      required: [id, status]
+      properties:
+        id:
+          type: string
+          description: รหัสโต๊ะ (โซนอักษร + หมายเลข)
+          example: A5
+        zone:
+          type: string
+          description: โซนที่นั่ง
+          example: A
+        status:
+          type: string
+          enum: [ว่าง, ใช้งานอยู่]
+          description: เปลี่ยนเป็น "ใช้งานอยู่" เมื่อมีออเดอร์แรก · กลับเป็น "ว่าง" เมื่อ checkout
+          example: ว่าง
+
+    Topping:
+      type: object
+      description: ของเพิ่มหนึ่งอย่าง (ราคาที่บวกเพิ่มจากราคาเมนู)
+      required: [name, price]
+      properties:
+        name:
+          type: string
+          example: ไข่ดาว
+        price:
+          type: integer
+          description: ราคาที่บวกเพิ่ม เป็นบาทจำนวนเต็ม
+          example: 10
+
+    OrderItem:
+      type: object
+      description: อาหารหนึ่งรายการในออเดอร์ (หนึ่งบรรทัดของตะกร้าที่ถูกส่ง)
+      required: [lineId, name, qty, unitPrice, status]
+      properties:
+        lineId:
+          type: integer
+          description: |
+            รหัสรายการที่ **client** เป็นคนออก (ตัวนับของตะกร้า) — ส่งไปพร้อมออเดอร์
+            และ server ตอบกลับเหมือนเดิม เพื่อให้หน้าติดตามและงาน `updateItemStatus`
+            ของครัวชี้รายจานได้ (ต่างจาก `no` ของออเดอร์ ที่ server เป็นคนออก)
+          example: 1
+        name:
+          type: string
+          example: ผัดกะเพราหมูสับ ไข่ดาว
+        qty:
+          type: integer
+          minimum: 1
+          example: 2
+        unitPrice:
+          type: integer
+          description: |
+            ราคาต่อชิ้น **เป็นบาทจำนวนเต็ม** (รวมราคาท็อปปิ้งแล้ว)
+            ต้องเป็น `75` ไม่ใช่ `"75 บาท"` — ชื่อฟิลด์ตรงกันแต่ชนิดผิด เอาไปคำนวณต่อไม่ได้
+          example: 75
+        spice:
+          type: string
+          nullable: true
+          description: |
+            ระดับเผ็ด **ที่ลูกค้าเลือกแล้ว** (ข้อความ เช่น "เผ็ดน้อย") · `null` = เมนูนี้ไม่มีตัวเลือกเผ็ด
+            ⚠️ ระวังสับสนกับ `spice` ใน `MenuItem` ซึ่งเป็น boolean (เมนูนี้เปิดให้เลือกไหม)
+            — ชื่อฟิลด์เดียวกัน คนละความหมาย คนละชนิด · spec ต้องเขียนแยกให้ชัดแบบนี้
+          example: เผ็ดน้อย
+        sweet:
+          type: string
+          nullable: true
+          description: ระดับหวานที่เลือกแล้ว · `null` = เมนูนี้ไม่มีตัวเลือกหวาน (ระวังสับสนกับ `MenuItem.sweet` เช่นกัน)
+          example: null
+        toppings:
+          type: array
+          description: ของเพิ่มที่เลือก (ไม่เลือกเลย = อาเรย์ว่าง)
+          items:
+            $ref: '#/components/schemas/Topping'
+        note:
+          type: string
+          description: โน้ตถึงครัว (ไม่มี = ข้อความว่าง)
+          example: ''
+        status:
+          type: string
+          enum: [ส่งครัว, กำลังทำ, เสิร์ฟแล้ว]
+          description: สถานะรายจาน — เริ่มที่ "ส่งครัว" เสมอ · **ครัวเป็นคนเลื่อน** ผ่าน `updateItemStatus`
+          example: ส่งครัว
+
+    NewOrder:
+      type: object
+      description: สิ่งที่ client ส่งตอนกด "ส่งครัว" — สังเกตว่า **ไม่มี** `no` และ `at` (server เป็นคนออก)
+      required: [table, items]
+      properties:
+        table:
+          type: string
+          description: เลขโต๊ะที่ผูกกับเครื่องนี้ (state ฝั่ง client — แนบมากับออเดอร์ตอนส่งเท่านั้น)
+          example: A5
+        items:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/OrderItem'
+
+    Order:
+      type: object
+      description: ออเดอร์ฉบับที่ server บันทึกแล้ว — เพิ่ม `no` และ `at` ที่ server ประทับให้
+      required: [no, table, at, items]
+      properties:
+        no:
+          type: integer
+          description: เลขออเดอร์ — **server ออกให้ ไม่ซ้ำกัน** (client ออกเองไม่ได้ เดี๋ยวสองเครื่องชนกัน)
+          example: 1
+        table:
+          type: string
+          example: A5
+        at:
+          type: string
+          format: date-time
+          description: เวลาที่ครัวรับออเดอร์ — server ประทับให้ (ส่งเป็นสตริงมาตรฐาน ไม่ใช่อ็อบเจกต์ Date)
+          example: '2026-07-22T09:00:00.000Z'
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/OrderItem'
+
+    MenuItem:
+      type: object
+      description: เมนูหนึ่งจาน (ข้อมูลของ server — client อ่านอย่างเดียว)
+      required: [id, name, price, cat]
+      properties:
+        id:
+          type: integer
+          example: 1
+        name:
+          type: string
+          example: ผัดกะเพราหมูสับ ไข่ดาว
+        price:
+          type: integer
+          description: ราคาฐานเป็นบาทจำนวนเต็ม (ยังไม่รวมท็อปปิ้ง)
+          example: 65
+        cat:
+          type: string
+          enum: [จานหลัก, ของทานเล่น, ของหวาน, เครื่องดื่ม]
+          example: จานหลัก
+        rec:
+          type: boolean
+          description: เป็นเมนูแนะนำหรือไม่
+          example: true
+        spice:
+          type: boolean
+          description: เมนูนี้ **เปิดให้เลือก** ระดับเผ็ดหรือไม่ (boolean — คนละชนิดกับ `OrderItem.spice` ที่เป็นระดับที่เลือกแล้ว)
+          example: true
+        sweet:
+          type: boolean
+          description: เมนูนี้เปิดให้เลือกระดับหวานหรือไม่
+          example: false
+        toppings:
+          type: array
+          description: ท็อปปิ้งที่เมนูนี้มีให้เลือก
+          items:
+            $ref: '#/components/schemas/Topping'
+        img:
+          type: string
+          description: ที่อยู่รูปอาหาร
+          example: /food/pad-kraprao.jpg
+
+    StaffCall:
+      type: object
+      description: คำขอเรียกพนักงานหนึ่งรายการ (ข้อมูลของ server — จอพนักงานต้องเห็น)
+      required: [id, table, reason, at]
+      properties:
+        id:
+          type: integer
+          description: server ออกให้
+          example: 1
+        table:
+          type: string
+          example: A5
+        reason:
+          type: string
+          enum: [ขอน้ำ, ขอช้อนส้อม/อุปกรณ์, ขอความช่วยเหลือ, ขอเช็คบิล]
+          example: ขอเช็คบิล
+        at:
+          type: string
+          format: date-time
+          description: เวลาที่รับคำขอ — server ประทับให้
+          example: '2026-07-22T09:05:00.000Z'
+
+    BillLine:
+      type: object
+      description: หนึ่งบรรทัดในบิล (มาจากรายการอาหารที่สั่งไปทั้งมื้อ)
+      required: [orderNo, lineId, name, qty, unitPrice]
+      properties:
+        orderNo:
+          type: integer
+          example: 1
+        lineId:
+          type: integer
+          example: 1
+        name:
+          type: string
+          example: ผัดกะเพราหมูสับ ไข่ดาว
+        qty:
+          type: integer
+          example: 2
+        unitPrice:
+          type: integer
+          example: 75
+
+    Bill:
+      type: object
+      description: |
+        บิลปัจจุบันของโต๊ะ — **server เป็นคนรวมเงินและคิด VAT** (ARCHITECTURE.md §8.3)
+        client แสดงพรีวิวเองได้ แต่ตัวเลขที่ใช้เก็บเงินจริงต้องมาจากก้อนนี้
+      required: [table, lines, subtotal, vat, total]
+      properties:
+        table:
+          type: string
+          example: A5
+        lines:
+          type: array
+          items:
+            $ref: '#/components/schemas/BillLine'
+        subtotal:
+          type: integer
+          description: ยอดรวมก่อนภาษี (บาทจำนวนเต็ม)
+          example: 160
+        vat:
+          type: integer
+          description: VAT 7% (ปัดตามกติกาของร้าน — server เป็นคนปัด)
+          example: 11
+        total:
+          type: integer
+          example: 171
+
+    Receipt:
+      type: object
+      description: ใบเสร็จหลัง checkout — ปิดรอบออเดอร์ของโต๊ะ โต๊ะกลับเป็น "ว่าง"
+      required: [billNo, table, total, at]
+      properties:
+        billNo:
+          type: integer
+          description: เลขใบเสร็จ — server ออกให้ ไม่ซ้ำ
+          example: 1
+        table:
+          type: string
+          example: A5
+        total:
+          type: integer
+          example: 171
+        at:
+          type: string
+          format: date-time
+          example: '2026-07-22T10:30:00.000Z'
+
+    ApiError:
+      type: object
+      description: |
+        รูปแบบ error ที่ตกลงกันใน spec (error contract)
+        **ชื่อ error (`code`) เป็นสิ่งที่ทีมกำหนดเอง** และผูกมัดเท่ากับชื่อฟิลด์ข้อมูล
+        · ตอนนี้ mock มีแบบเดียว server จริง (สัปดาห์ที่ 6) จะเพิ่มได้ (เช่น ของหมด, โต๊ะถูกปิด)
+        แต่ต้องเพิ่ม **ใน spec นี้ก่อน** แล้วสองฝั่งค่อย implement ตาม
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          enum: [SERVER_UNREACHABLE]
+          description: ชื่อ error (สำหรับให้โค้ดแยกแยะ)
+          example: SERVER_UNREACHABLE
+        message:
+          type: string
+          description: ข้อความสำหรับมนุษย์อ่าน (client จะแสดงหรือเขียนใหม่ก็ได้)
+          example: ส่งออเดอร์ไม่สำเร็จ (จำลองเครือข่ายมีปัญหา)

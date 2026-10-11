@@ -1,0 +1,58 @@
+/* สไตล์รวมของแอป — ชั้น "ตัวอักษร/ภาษาไทย" ของระบบดีไซน์ (design.md §3)
+   - ตั้งฟอนต์ไทย Sarabun (มีทั้งไทยและละติน ใช้ตัวเดียวคุมทั้งเว็บ)
+   - ระยะบรรทัดของไทยสูงกว่าอังกฤษ กันสระ/วรรณยุกต์ทับกัน
+   - สี/ระยะห่าง คุมด้วยระบบของ Vuetify (theme + spacing) ไม่ hardcode ที่นี่ */
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  font-family: 'Sarabun', 'Noto Sans Thai', sans-serif;
+}
+
+/* ============================================================================
+   กับดักจริงของ Vuetify (design.md §3) — ต้องอ่านก่อนแก้
+   ----------------------------------------------------------------------------
+   คลาส typography ของ Vuetify (.text-h4 / .text-h6 / .text-body-1 / .text-caption
+   / .text-subtitle-* / .text-button ฯลฯ) "ประกาศ font-family: Roboto ไว้ในตัวเอง"
+   → การตั้งฟอนต์แค่ที่ .v-application ไม่พอ เพราะค่าที่ประกาศบน element โดยตรง
+     ชนะค่าที่ตกทอด (inherit) มาจากพ่อเสมอ
+   ผลคือ "ชื่อเมนู (text-body-1) / หัวข้อ (text-h4) / ราคา (text-h6) / หัวข้อ dialog"
+     กลายเป็น Roboto ทั้งที่เราตั้ง Sarabun ไว้ที่ .v-application (ไทยเพี้ยน = ผิด §3)
+
+   วิธีแก้: override ทุกคลาส text-* ให้เป็น Sarabun ด้วย selector ที่เจาะจงกว่า
+     `.v-application [class*="text-"]` มี specificity สูงกว่า `.text-h4` → ชนะแน่นอน
+     (ครอบคลุมทั้ง text-h1..6, text-body-1/2, text-caption, text-subtitle-*,
+      text-button, text-overline และรุ่นตามจอ text-sm-*/md-*/lg-*/xl-* ในกฎเดียว)
+
+   ⚠️ กับดักซ้อน: v-dialog / v-menu / v-select / v-snackbar ถูก Vuetify "teleport"
+     ออกไปไว้ที่ `.v-overlay-container` ซึ่งเป็นลูกตรงของ <body> — อยู่ "นอก" .v-application
+     → ถ้าเขียนแค่ `.v-application ...` หัวข้อ/ข้อความในหน้าต่างจะยังเป็น Roboto
+     จึงต้องครอบทั้งสองราก (.v-application และ .v-overlay-container)
+   ============================================================================ */
+.v-application {
+  font-family: 'Sarabun', 'Noto Sans Thai', sans-serif;
+  line-height: 1.7;
+}
+
+.v-application [class*='text-'],
+.v-overlay-container [class*='text-'],
+.v-application .v-badge__badge,
+.v-overlay-container .v-badge__badge {
+  font-family: 'Sarabun', 'Noto Sans Thai', sans-serif;
+}
+
+/* หัวข้อใหญ่รัดบรรทัดเข้าหน่อยไม่ให้ดูโปร่งเกิน แต่ยังพอสำหรับสระไทย */
+.v-application .text-h4,
+.v-application .text-h5,
+.v-application .text-h6 {
+  line-height: 1.35;
+}
+
+/* หมายเหตุ: คอนทราสต์ "ข้อความรอง" (medium-emphasis) ปรับที่ theme.variables
+   ใน src/plugins/vuetify.js (ค่า 0.68) — Vuetify inject ตัวแปรตอน runtime
+   จึง override ใน CSS ธรรมดาไม่ติด ต้องตั้งผ่าน config ของ Vuetify (design.md §10) */
